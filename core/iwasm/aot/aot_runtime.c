@@ -47,6 +47,13 @@ bh_static_assert(sizeof(AOTMemoryInstance) == 104);
 bh_static_assert(offsetof(AOTTableInstance, elems) == 8);
 
 bh_static_assert(offsetof(AOTModuleInstanceExtra, stack_sizes) == 0);
+bh_static_assert(offsetof(AOTModuleInstanceExtra, common.c_api_func_imports)
+                 == sizeof(uint64));
+
+bh_static_assert(sizeof(CApiFuncImport) == sizeof(uintptr_t) * 3);
+
+bh_static_assert(sizeof(wasm_val_t) == 16);
+bh_static_assert(offsetof(wasm_val_t, of) == 8);
 
 static void
 set_error_buf(char *error_buf, uint32 error_buf_size, const char *string)
@@ -489,6 +496,12 @@ memory_instantiate(AOTModuleInstance *module_inst, AOTModuleInstance *parent,
         if (max_page_count > DEFAULT_MAX_PAGES)
             max_page_count = DEFAULT_MAX_PAGES;
     }
+    else { /* heap_size == 0 */
+        if (init_page_count == DEFAULT_MAX_PAGES) {
+            num_bytes_per_page = UINT32_MAX;
+            init_page_count = max_page_count = 1;
+        }
+    }
 
     LOG_VERBOSE("Memory instantiate:");
     LOG_VERBOSE("  page bytes: %u, init pages: %u, max pages: %u",
@@ -531,8 +544,8 @@ memory_instantiate(AOTModuleInstance *module_inst, AOTModuleInstance *parent,
      * both i and memarg.offset are u32 in range 0 to 4G
      * so the range of ea is 0 to 8G
      */
-    if (!(p = mapped_mem =
-              os_mmap(NULL, map_size, MMAP_PROT_NONE, MMAP_MAP_NONE))) {
+    if (!(p = mapped_mem = os_mmap(NULL, map_size, MMAP_PROT_NONE,
+                                   MMAP_MAP_NONE, os_get_invalid_handle()))) {
         set_error_buf(error_buf, error_buf_size, "mmap memory failed");
         return NULL;
     }
@@ -599,7 +612,7 @@ memory_instantiate(AOTModuleInstance *module_inst, AOTModuleInstance *parent,
 
 #if WASM_ENABLE_SHARED_MEMORY != 0
     if (is_shared_memory) {
-        memory_inst->is_shared_memory = true;
+        memory_inst->is_shared_memory = 1;
         memory_inst->ref_count = 1;
     }
 #endif
@@ -976,7 +989,8 @@ execute_post_instantiate_functions(AOTModuleInstance *module_inst,
            wasm functions, and ensure that the exec_env's module inst
            is the correct one. */
         module_inst_main = exec_env_main->module_inst;
-        exec_env->module_inst = (WASMModuleInstanceCommon *)module_inst;
+        wasm_exec_env_set_module_inst(exec_env,
+                                      (WASMModuleInstanceCommon *)module_inst);
     }
     else {
         /* Try using the existing exec_env */
@@ -1001,7 +1015,8 @@ execute_post_instantiate_functions(AOTModuleInstance *module_inst,
                module inst to ensure that the exec_env's module inst
                is the correct one. */
             module_inst_main = exec_env->module_inst;
-            exec_env->module_inst = (WASMModuleInstanceCommon *)module_inst;
+            wasm_exec_env_set_module_inst(
+                exec_env, (WASMModuleInstanceCommon *)module_inst);
         }
     }
 
@@ -1051,12 +1066,12 @@ execute_post_instantiate_functions(AOTModuleInstance *module_inst,
 fail:
     if (is_sub_inst) {
         /* Restore the parent exec_env's module inst */
-        exec_env_main->module_inst = module_inst_main;
+        wasm_exec_env_restore_module_inst(exec_env_main, module_inst_main);
     }
     else {
         if (module_inst_main)
             /* Restore the existing exec_env's module inst */
-            exec_env->module_inst = module_inst_main;
+            wasm_exec_env_restore_module_inst(exec_env, module_inst_main);
         if (exec_env_created)
             wasm_exec_env_destroy(exec_env_created);
     }
@@ -1090,6 +1105,9 @@ aot_instantiate(AOTModule *module, AOTModuleInstance *parent,
                 char *error_buf, uint32 error_buf_size)
 {
     AOTModuleInstance *module_inst;
+#if WASM_ENABLE_BULK_MEMORY != 0 || WASM_ENABLE_REF_TYPES != 0
+    WASMModuleInstanceExtraCommon *common;
+#endif
     const uint32 module_inst_struct_size =
         offsetof(AOTModuleInstance, global_table_data.bytes);
     const uint64 module_inst_mem_inst_size =
@@ -1153,6 +1171,32 @@ aot_instantiate(AOTModule *module, AOTModuleInstance *parent,
     if (!ret) {
         LOG_DEBUG("build a sub module list failed");
         goto fail;
+    }
+#endif
+
+#if WASM_ENABLE_BULK_MEMORY != 0 || WASM_ENABLE_REF_TYPES != 0
+    common = &((AOTModuleInstanceExtra *)module_inst->e)->common;
+#endif
+#if WASM_ENABLE_BULK_MEMORY != 0
+    if (module->mem_init_data_count > 0) {
+        common->data_dropped = bh_bitmap_new(0, module->mem_init_data_count);
+        if (common->data_dropped == NULL) {
+            LOG_DEBUG("failed to allocate bitmaps");
+            set_error_buf(error_buf, error_buf_size,
+                          "failed to allocate bitmaps");
+            goto fail;
+        }
+    }
+#endif
+#if WASM_ENABLE_REF_TYPES != 0
+    if (module->table_init_data_count > 0) {
+        common->elem_dropped = bh_bitmap_new(0, module->table_init_data_count);
+        if (common->elem_dropped == NULL) {
+            LOG_DEBUG("failed to allocate bitmaps");
+            set_error_buf(error_buf, error_buf_size,
+                          "failed to allocate bitmaps");
+            goto fail;
+        }
     }
 #endif
 
@@ -1256,6 +1300,8 @@ fail:
 void
 aot_deinstantiate(AOTModuleInstance *module_inst, bool is_sub_inst)
 {
+    WASMModuleInstanceExtraCommon *common =
+        &((AOTModuleInstanceExtra *)module_inst->e)->common;
     if (module_inst->exec_env_singleton) {
         /* wasm_exec_env_destroy will call
            wasm_cluster_wait_for_all_except_self to wait for other
@@ -1298,7 +1344,7 @@ aot_deinstantiate(AOTModuleInstance *module_inst, bool is_sub_inst)
     if (module_inst->func_type_indexes)
         wasm_runtime_free(module_inst->func_type_indexes);
 
-    if (((AOTModuleInstanceExtra *)module_inst->e)->common.c_api_func_imports)
+    if (common->c_api_func_imports)
         wasm_runtime_free(((AOTModuleInstanceExtra *)module_inst->e)
                               ->common.c_api_func_imports);
 
@@ -1308,6 +1354,13 @@ aot_deinstantiate(AOTModuleInstance *module_inst, bool is_sub_inst)
 #endif
         wasm_native_call_context_dtors((WASMModuleInstanceCommon *)module_inst);
     }
+
+#if WASM_ENABLE_BULK_MEMORY != 0
+    bh_bitmap_delete(common->data_dropped);
+#endif
+#if WASM_ENABLE_REF_TYPES != 0
+    bh_bitmap_delete(common->elem_dropped);
+#endif
 
     wasm_runtime_free(module_inst);
 }
@@ -1328,7 +1381,6 @@ aot_lookup_function(const AOTModuleInstance *module_inst, const char *name,
 }
 
 #ifdef OS_ENABLE_HW_BOUND_CHECK
-
 static bool
 invoke_native_with_hw_bound_check(WASMExecEnv *exec_env, void *func_ptr,
                                   const WASMType *func_type,
@@ -1340,9 +1392,6 @@ invoke_native_with_hw_bound_check(WASMExecEnv *exec_env, void *func_ptr,
     WASMJmpBuf jmpbuf_node = { 0 }, *jmpbuf_node_pop;
     uint32 page_size = os_getpagesize();
     uint32 guard_page_count = STACK_OVERFLOW_CHECK_GUARD_PAGE_COUNT;
-    uint16 param_count = func_type->param_count;
-    uint16 result_count = func_type->result_count;
-    const uint8 *types = func_type->types;
 #ifdef BH_PLATFORM_WINDOWS
     int result;
     bool has_exception;
@@ -1360,42 +1409,43 @@ invoke_native_with_hw_bound_check(WASMExecEnv *exec_env, void *func_ptr,
         return false;
     }
 
-    if (exec_env_tls && (exec_env_tls != exec_env)) {
-        aot_set_exception(module_inst, "invalid exec env");
-        return false;
-    }
+    if (!exec_env_tls) {
+        if (!os_thread_signal_inited()) {
+            aot_set_exception(module_inst, "thread signal env not inited");
+            return false;
+        }
 
-    if (!os_thread_signal_inited()) {
-        aot_set_exception(module_inst, "thread signal env not inited");
-        return false;
+        /* Set thread handle and stack boundary if they haven't been set */
+        wasm_exec_env_set_thread_info(exec_env);
+
+        wasm_runtime_set_exec_env_tls(exec_env);
+    }
+    else {
+        if (exec_env_tls != exec_env) {
+            aot_set_exception(module_inst, "invalid exec env");
+            return false;
+        }
     }
 
     wasm_exec_env_push_jmpbuf(exec_env, &jmpbuf_node);
 
-    wasm_runtime_set_exec_env_tls(exec_env);
     if (os_setjmp(jmpbuf_node.jmpbuf) == 0) {
-        /* Quick call with func_ptr if the function signature is simple */
-        if (!signature && param_count == 1 && types[0] == VALUE_TYPE_I32) {
-            if (result_count == 0) {
-                void (*NativeFunc)(WASMExecEnv *, uint32) =
-                    (void (*)(WASMExecEnv *, uint32))func_ptr;
-                NativeFunc(exec_env, argv[0]);
-                ret = aot_copy_exception(module_inst, NULL) ? false : true;
-            }
-            else if (result_count == 1
-                     && types[param_count] == VALUE_TYPE_I32) {
-                uint32 (*NativeFunc)(WASMExecEnv *, uint32) =
-                    (uint32(*)(WASMExecEnv *, uint32))func_ptr;
-                argv_ret[0] = NativeFunc(exec_env, argv[0]);
-                ret = aot_copy_exception(module_inst, NULL) ? false : true;
-            }
-            else {
-                ret = wasm_runtime_invoke_native(exec_env, func_ptr, func_type,
-                                                 signature, attachment, argv,
-                                                 argc, argv_ret);
-            }
+#if WASM_ENABLE_QUICK_AOT_ENTRY != 0
+        /* Quick call if the quick aot entry is registered */
+        if (!signature && func_type->quick_aot_entry) {
+            void (*invoke_native)(
+                void *func_ptr, uint8 ret_type, void *exec_env, uint32 *argv,
+                uint32 *argv_ret) = func_type->quick_aot_entry;
+            invoke_native(func_ptr,
+                          func_type->result_count > 0
+                              ? func_type->types[func_type->param_count]
+                              : VALUE_TYPE_VOID,
+                          exec_env, argv, argv_ret);
+            ret = !aot_copy_exception(module_inst, NULL);
         }
-        else {
+        else
+#endif
+        {
             ret = wasm_runtime_invoke_native(exec_env, func_ptr, func_type,
                                              signature, attachment, argv, argc,
                                              argv_ret);
@@ -1427,7 +1477,6 @@ invoke_native_with_hw_bound_check(WASMExecEnv *exec_env, void *func_ptr,
     (void)jmpbuf_node_pop;
     return ret;
 }
-
 #define invoke_native_internal invoke_native_with_hw_bound_check
 #else /* else of OS_ENABLE_HW_BOUND_CHECK */
 #define invoke_native_internal wasm_runtime_invoke_native
@@ -1497,10 +1546,16 @@ aot_call_function(WASMExecEnv *exec_env, AOTFunctionInstance *function,
 
     /* func pointer was looked up previously */
     bh_assert(func_ptr != NULL);
-    /* set thread handle and stack boundary */
-    wasm_exec_env_set_thread_info(exec_env);
 
-    /* set exec env so it can be later retrieved from instance */
+#ifndef OS_ENABLE_HW_BOUND_CHECK
+    /* Set thread handle and stack boundary */
+    wasm_exec_env_set_thread_info(exec_env);
+#else
+    /* Set thread info in invoke_native_with_hw_bound_check when
+       hw bound check is enabled */
+#endif
+
+    /* Set exec env so it can be later retrieved from instance */
     ((AOTModuleInstanceExtra *)module_inst->e)->common.cur_exec_env = exec_env;
 
     if (ext_ret_count > 0) {
@@ -1707,7 +1762,8 @@ execute_malloc_function(AOTModuleInstance *module_inst, WASMExecEnv *exec_env,
                module inst to ensure that the exec_env's module inst
                is the correct one. */
             module_inst_old = exec_env->module_inst;
-            exec_env->module_inst = (WASMModuleInstanceCommon *)module_inst;
+            wasm_exec_env_set_module_inst(
+                exec_env, (WASMModuleInstanceCommon *)module_inst);
         }
     }
 
@@ -1718,7 +1774,7 @@ execute_malloc_function(AOTModuleInstance *module_inst, WASMExecEnv *exec_env,
 
     if (module_inst_old)
         /* Restore the existing exec_env's module inst */
-        exec_env->module_inst = module_inst_old;
+        wasm_exec_env_restore_module_inst(exec_env, module_inst_old);
 
     if (exec_env_created)
         wasm_exec_env_destroy(exec_env_created);
@@ -1774,7 +1830,8 @@ execute_free_function(AOTModuleInstance *module_inst, WASMExecEnv *exec_env,
                module inst to ensure that the exec_env's module inst
                is the correct one. */
             module_inst_old = exec_env->module_inst;
-            exec_env->module_inst = (WASMModuleInstanceCommon *)module_inst;
+            wasm_exec_env_set_module_inst(
+                exec_env, (WASMModuleInstanceCommon *)module_inst);
         }
     }
 
@@ -1782,7 +1839,7 @@ execute_free_function(AOTModuleInstance *module_inst, WASMExecEnv *exec_env,
 
     if (module_inst_old)
         /* Restore the existing exec_env's module inst */
-        exec_env->module_inst = module_inst_old;
+        wasm_exec_env_restore_module_inst(exec_env, module_inst_old);
 
     if (exec_env_created)
         wasm_exec_env_destroy(exec_env_created);
@@ -2292,13 +2349,21 @@ aot_memory_init(AOTModuleInstance *module_inst, uint32 seg_index, uint32 offset,
 {
     AOTMemoryInstance *memory_inst = aot_get_default_memory(module_inst);
     AOTModule *aot_module;
-    uint8 *data = NULL;
+    uint8 *data;
     uint8 *maddr;
-    uint64 seg_len = 0;
+    uint64 seg_len;
 
-    aot_module = (AOTModule *)module_inst->module;
-    seg_len = aot_module->mem_init_data_list[seg_index]->byte_count;
-    data = aot_module->mem_init_data_list[seg_index]->bytes;
+    if (bh_bitmap_get_bit(
+            ((AOTModuleInstanceExtra *)module_inst->e)->common.data_dropped,
+            seg_index)) {
+        seg_len = 0;
+        data = NULL;
+    }
+    else {
+        aot_module = (AOTModule *)module_inst->module;
+        seg_len = aot_module->mem_init_data_list[seg_index]->byte_count;
+        data = aot_module->mem_init_data_list[seg_index]->bytes;
+    }
 
     if (!wasm_runtime_validate_app_addr((WASMModuleInstanceCommon *)module_inst,
                                         dst, len))
@@ -2321,9 +2386,9 @@ aot_memory_init(AOTModuleInstance *module_inst, uint32 seg_index, uint32 offset,
 bool
 aot_data_drop(AOTModuleInstance *module_inst, uint32 seg_index)
 {
-    AOTModule *aot_module = (AOTModule *)module_inst->module;
-
-    aot_module->mem_init_data_list[seg_index]->byte_count = 0;
+    bh_bitmap_set_bit(
+        ((AOTModuleInstanceExtra *)module_inst->e)->common.data_dropped,
+        seg_index);
     /* Currently we can't free the dropped data segment
        as the mem_init_data_count is a continuous array */
     return true;
@@ -2536,9 +2601,9 @@ aot_get_module_inst_mem_consumption(const AOTModuleInstance *module_inst,
 void
 aot_drop_table_seg(AOTModuleInstance *module_inst, uint32 tbl_seg_idx)
 {
-    AOTModule *module = (AOTModule *)module_inst->module;
-    AOTTableInitData *tbl_seg = module->table_init_data_list[tbl_seg_idx];
-    tbl_seg->is_dropped = true;
+    bh_bitmap_set_bit(
+        ((AOTModuleInstanceExtra *)module_inst->e)->common.elem_dropped,
+        tbl_seg_idx);
 }
 
 void
@@ -2566,7 +2631,9 @@ aot_table_init(AOTModuleInstance *module_inst, uint32 tbl_idx,
         return;
     }
 
-    if (tbl_seg->is_dropped) {
+    if (bh_bitmap_get_bit(
+            ((AOTModuleInstanceExtra *)module_inst->e)->common.elem_dropped,
+            tbl_seg_idx)) {
         aot_set_exception_with_id(module_inst, EXCE_OUT_OF_BOUNDS_TABLE_ACCESS);
         return;
     }
@@ -2907,13 +2974,15 @@ aot_dump_perf_profiling(const AOTModuleInstance *module_inst)
         func_name = get_func_name_from_index(module_inst, i);
 
         if (func_name)
-            os_printf("  func %s, execution time: %.3f ms, execution count: %d "
-                      "times\n",
-                      func_name, perf_prof->total_exec_time / 1000.0f,
-                      perf_prof->total_exec_cnt);
+            os_printf(
+                "  func %s, execution time: %.3f ms, execution count: %" PRIu32
+                " times\n",
+                func_name, perf_prof->total_exec_time / 1000.0f,
+                perf_prof->total_exec_cnt);
         else
-            os_printf("  func %d, execution time: %.3f ms, execution count: %d "
-                      "times\n",
+            os_printf("  func %" PRIu32
+                      ", execution time: %.3f ms, execution count: %" PRIu32
+                      " times\n",
                       i, perf_prof->total_exec_time / 1000.0f,
                       perf_prof->total_exec_cnt);
     }

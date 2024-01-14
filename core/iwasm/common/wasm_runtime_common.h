@@ -15,7 +15,6 @@
 
 #if WASM_ENABLE_LIBC_WASI != 0
 #if WASM_ENABLE_UVWASI == 0
-#include "wasmtime_ssp.h"
 #include "posix.h"
 #else
 #include "uvwasi.h"
@@ -55,6 +54,12 @@ STORE_U16(void *addr, uint16_t value)
 {
     *(uint16_t *)(addr) = (uint16_t)(value);
 }
+static inline void
+STORE_U8(void *addr, uint8_t value)
+{
+    *(uint8 *)addr = value;
+}
+
 /* For LOAD opcodes */
 #define LOAD_I64(addr) (*(int64 *)(addr))
 #define LOAD_F64(addr) (*(float64 *)(addr))
@@ -174,6 +179,13 @@ STORE_U32(void *addr, uint32_t value)
         }
     }
 }
+
+static inline void
+STORE_U8(void *addr, uint8_t value)
+{
+    *(uint8 *)addr = value;
+}
+
 static inline void
 STORE_U16(void *addr, uint16_t value)
 {
@@ -426,11 +438,12 @@ typedef struct wasm_frame_t {
     const char *func_name_wp;
 } WASMCApiFrame;
 
-#ifdef WASM_ENABLE_JIT
+#if WASM_ENABLE_JIT != 0
 typedef struct LLVMJITOptions {
     uint32 opt_level;
     uint32 size_level;
     uint32 segue_flags;
+    bool quick_invoke_c_api_import;
 } LLVMJITOptions;
 #endif
 
@@ -464,7 +477,7 @@ wasm_runtime_get_default_running_mode(void);
 
 #if WASM_ENABLE_JIT != 0
 /* Internal API */
-LLVMJITOptions
+LLVMJITOptions *
 wasm_runtime_get_llvm_jit_options(void);
 #endif
 
@@ -604,7 +617,7 @@ wasm_runtime_set_user_data(WASMExecEnv *exec_env, void *user_data);
 WASM_RUNTIME_API_EXTERN void *
 wasm_runtime_get_user_data(WASMExecEnv *exec_env);
 
-#if WASM_CONFIGUABLE_BOUNDS_CHECKS != 0
+#if WASM_CONFIGURABLE_BOUNDS_CHECKS != 0
 /* See wasm_export.h for description */
 WASM_RUNTIME_API_EXTERN void
 wasm_runtime_set_bounds_checks(WASMModuleInstanceCommon *module_inst,
@@ -863,7 +876,7 @@ wasm_runtime_set_wasi_args_ex(WASMModuleCommon *module, const char *dir_list[],
                               uint32 dir_count, const char *map_dir_list[],
                               uint32 map_dir_count, const char *env_list[],
                               uint32 env_count, char *argv[], int argc,
-                              int stdinfd, int stdoutfd, int stderrfd);
+                              int64 stdinfd, int64 stdoutfd, int64 stderrfd);
 
 /* See wasm_export.h for description */
 WASM_RUNTIME_API_EXTERN void
@@ -891,8 +904,9 @@ wasm_runtime_init_wasi(WASMModuleInstanceCommon *module_inst,
                        const char *env[], uint32 env_count,
                        const char *addr_pool[], uint32 addr_pool_size,
                        const char *ns_lookup_pool[], uint32 ns_lookup_pool_size,
-                       char *argv[], uint32 argc, int stdinfd, int stdoutfd,
-                       int stderrfd, char *error_buf, uint32 error_buf_size);
+                       char *argv[], uint32 argc, os_raw_file_handle stdinfd,
+                       os_raw_file_handle stdoutfd, os_raw_file_handle stderrfd,
+                       char *error_buf, uint32 error_buf_size);
 
 void
 wasm_runtime_destroy_wasi(WASMModuleInstanceCommon *module_inst);
@@ -1066,6 +1080,16 @@ wasm_runtime_invoke_c_api_native(WASMModuleInstanceCommon *module_inst,
                                  uint32 argc, uint32 *argv, bool with_env,
                                  void *wasm_c_api_env);
 
+struct CApiFuncImport;
+/* A quick version of wasm_runtime_invoke_c_api_native to directly invoke
+   wasm-c-api import function from jitted code to improve performance */
+bool
+wasm_runtime_quick_invoke_c_api_native(WASMModuleInstanceCommon *module_inst,
+                                       struct CApiFuncImport *c_api_import,
+                                       wasm_val_t *params, uint32 param_count,
+                                       wasm_val_t *results,
+                                       uint32 result_count);
+
 void
 wasm_runtime_show_app_heap_corrupted_prompt();
 
@@ -1090,6 +1114,14 @@ wasm_runtime_end_blocking_op(WASMExecEnv *exec_env);
 
 void
 wasm_runtime_interrupt_blocking_op(WASMExecEnv *exec_env);
+
+#if WASM_ENABLE_LINUX_PERF != 0
+bool
+wasm_runtime_get_linux_perf(void);
+
+void
+wasm_runtime_set_linux_perf(bool flag);
+#endif
 
 #ifdef __cplusplus
 }
