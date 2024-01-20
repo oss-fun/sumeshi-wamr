@@ -162,12 +162,12 @@ uint8* get_type_stack(uint32 fidx, uint32 offset, uint32* type_stack_size, bool 
     for (uint32 i = 0; i < locals_size; ++i) type_stack[i] = locals[i];
     for (uint32 i = 0; i < stack_size; ++i) type_stack[locals_size + i] = stack[i];
 
-    printf("new type stack: [");
-    for (uint32 i = 0; i < locals_size + stack_size; ++i) {
-        if (i+1 == locals_size + stack_size)printf("%d", type_stack[i]);
-        else                                printf("%d, ", type_stack[i]);
-    }
-    printf("]\n");
+    // printf("new type stack: [");
+    // for (uint32 i = 0; i < locals_size + stack_size; ++i) {
+    //     if (i+1 == locals_size + stack_size)printf("%d", type_stack[i]);
+    //     else                                printf("%d, ", type_stack[i]);
+    // }
+    // printf("]\n");
 
     fclose(tablemap_func);
     fclose(tablemap_offset);
