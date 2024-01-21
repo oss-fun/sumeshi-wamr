@@ -355,8 +355,8 @@ int wasm_dump_memory(WASMMemoryInstance *memory) {
     dump_dirty_memory(memory);
 
     // デバッグのために、すべてのメモリも保存
-    fwrite(memory->memory_data, sizeof(uint8),
-           memory->num_bytes_per_page * memory->cur_page_count, memory_fp);
+    // fwrite(memory->memory_data, sizeof(uint8),
+    //        memory->num_bytes_per_page * memory->cur_page_count, memory_fp);
 
     printf("page_count: %d\n", memory->cur_page_count);
     fwrite(&(memory->cur_page_count), sizeof(uint32), 1, mem_size_fp);
