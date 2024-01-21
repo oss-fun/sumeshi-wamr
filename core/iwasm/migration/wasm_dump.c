@@ -349,20 +349,21 @@ int dump_dirty_memory(WASMMemoryInstance *memory) {
 }
 
 int wasm_dump_memory(WASMMemoryInstance *memory) {
-    FILE *memory_fp = open_image("all_memory.img", "wb");
     FILE *mem_size_fp = open_image("mem_page_count.img", "wb");
 
     dump_dirty_memory(memory);
 
-    // デバッグのために、すべてのメモリも保存
-    // fwrite(memory->memory_data, sizeof(uint8),
-    //        memory->num_bytes_per_page * memory->cur_page_count, memory_fp);
 
     printf("page_count: %d\n", memory->cur_page_count);
     fwrite(&(memory->cur_page_count), sizeof(uint32), 1, mem_size_fp);
 
-    fclose(memory_fp);
     fclose(mem_size_fp);
+
+    // デバッグのために、すべてのメモリも保存
+    // FILE *all_memory_fp = open_image("all_memory.img", "wb");
+    // fwrite(memory->memory_data, sizeof(uint8),
+    //        memory->num_bytes_per_page * memory->cur_page_count, all_memory_fp);
+    // fclose(all_memory_fp);
 }
 
 int wasm_dump_global(WASMModuleInstance *module, WASMGlobalInstance *globals, uint8* global_data) {

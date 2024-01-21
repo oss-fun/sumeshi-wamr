@@ -3,6 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
  */
 
+#include <time.h>
+
 #include "wasm_interp.h"
 #include "bh_log.h"
 #include "wasm_runtime.h"
@@ -1247,6 +1249,11 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
     signal(SIGINT, &wasm_interp_sigint);
     // Clear soft-dirty bit
     clear_refs();
+
+    // リストアの初期化時間の計測(終了)
+    struct timespec ts1;
+    clock_gettime(CLOCK_MONOTONIC, &ts1);
+    fprintf(stderr, "boot_end, %lu\n", (uint64_t)(ts1.tv_sec*1e9) + ts1.tv_nsec);
 
     if (get_restore_flag()) {
         // bool done_flag;
