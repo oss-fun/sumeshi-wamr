@@ -388,16 +388,26 @@ int wasm_restore(WASMModuleInstance **module,
             uint8 **maddr,
             bool *done_flag)
 {
+    struct timespec ts1, ts2;
     // restore memory
+    clock_gettime(CLOCK_MONOTONIC, &ts1);
     wasm_restore_memory(*module, memory, maddr);
+    clock_gettime(CLOCK_MONOTONIC, &ts2);
+    fprintf(stderr, "memory, %lu\n", get_time(ts1, ts2));
     // printf("Success to restore linear memory\n");
 
     // restore globals
+    clock_gettime(CLOCK_MONOTONIC, &ts1);
     wasm_restore_global(*module, *globals, global_data, global_addr);
+    clock_gettime(CLOCK_MONOTONIC, &ts2);
+    fprintf(stderr, "global, %lu\n", get_time(ts1, ts2));
     // printf("Success to restore globals\n");
 
     // restore program counter
+    clock_gettime(CLOCK_MONOTONIC, &ts1);
     wasm_restore_program_counter(*module, frame_ip);
+    clock_gettime(CLOCK_MONOTONIC, &ts2);
+    fprintf(stderr, "program counter, %lu\n", get_time(ts1, ts2));
     // printf("Success to program counter\n");
 
     return 0;

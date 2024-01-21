@@ -1258,8 +1258,12 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
     if (get_restore_flag()) {
         // bool done_flag;
         int rc;
+        struct timespec ts1, ts2;
 
+        clock_gettime(CLOCK_MONOTONIC, &ts1);
         frame = wasm_restore_stack(&exec_env);
+        clock_gettime(CLOCK_MONOTONIC, &ts2);
+        fprintf(stderr, "stack, %lu\n", get_time(ts1, ts2));
         if (frame == NULL) {
             perror("Error:wasm_interp_func_bytecode:frame is NULL\n");
             return;
