@@ -3,6 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
  */
 
+#include <time.h>
+
 #include "wasm_interp.h"
 #include "bh_log.h"
 #include "wasm_runtime.h"
@@ -1159,6 +1161,17 @@ get_global_addr(uint8 *global_data, WASMGlobalInstance *global)
 #endif
 }
 
+static void clear_refs() {
+    int fd;
+    char *v = "4";
+
+    fd = open("/proc/self/clear_refs", O_WRONLY);
+    if (write(fd, v, 3) < 3) {
+        perror("Can't clear soft-dirty bit");
+    }
+    close(fd);
+}
+
 static bool sig_flag = false;
 static void (*native_handler)(void) = NULL;
 bool done_flag = false;
@@ -1234,12 +1247,23 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
 #endif
 
     signal(SIGINT, &wasm_interp_sigint);
+    // Clear soft-dirty bit
+    clear_refs();
+
+    // リストアの初期化時間の計測(終了)
+    struct timespec ts1;
+    clock_gettime(CLOCK_MONOTONIC, &ts1);
+    fprintf(stderr, "boot_end, %lu\n", (uint64_t)(ts1.tv_sec*1e9) + ts1.tv_nsec);
 
     if (get_restore_flag()) {
         // bool done_flag;
         int rc;
+        struct timespec ts1, ts2;
 
+        clock_gettime(CLOCK_MONOTONIC, &ts1);
         frame = wasm_restore_stack(&exec_env);
+        clock_gettime(CLOCK_MONOTONIC, &ts2);
+        fprintf(stderr, "stack, %lu\n", get_time(ts1, ts2));
         if (frame == NULL) {
             perror("Error:wasm_interp_func_bytecode:frame is NULL\n");
             return;

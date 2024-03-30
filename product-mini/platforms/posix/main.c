@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "bh_platform.h"
 #include "bh_read_file.h"
@@ -546,6 +547,11 @@ timeout_thread(void *vp)
 int
 main(int argc, char *argv[])
 {
+    // リストアの初期化時間の計測(開始)
+    struct timespec ts1;
+    clock_gettime(CLOCK_MONOTONIC, &ts1);
+    fprintf(stderr, "boot_start, %lu\n", (uint64_t)(ts1.tv_sec*1e9) + ts1.tv_nsec);
+
     int32 ret = -1;
     char *wasm_file = NULL;
     const char *func_name = NULL;
