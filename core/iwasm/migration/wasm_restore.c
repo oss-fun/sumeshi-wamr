@@ -147,6 +147,7 @@ _restore_stack(WASMExecEnv *exec_env, WASMInterpFrame *frame, FILE *fp)
 {
     WASMModuleInstance *module_inst = exec_env->module_inst;
     WASMFunctionInstance *func = frame->function;
+    int read_size = 0;
 
     // 初期化
     frame->sp_bottom = frame->lp + func->param_cell_num + func->local_cell_num;
@@ -159,7 +160,7 @@ _restore_stack(WASMExecEnv *exec_env, WASMInterpFrame *frame, FILE *fp)
     // リターンアドレス
     WASMInterpFrame* prev_frame = frame->prev_frame;
     uint32 fidx, offset;
-    fread(&fidx, sizeof(uint32), 1, fp);
+    read_size = fread(&fidx, sizeof(uint32), 1, fp);
     fread(&offset, sizeof(uint32), 1, fp);
     if (prev_frame->function != NULL)
         prev_frame->ip = wasm_get_func_code(prev_frame->function) + offset;

@@ -1618,7 +1618,8 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
             return;
         }
 
-        uint8 *dummy_ip, *dummy_lp, *dummy_sp;
+        uint8 *dummy_ip;
+        uint32 *dummy_lp, *dummy_sp;
         rc = wasm_restore(&module, &exec_env, &cur_func, &prev_frame,
                         &memory, &globals, &global_data, &global_addr,
                         &frame, &dummy_ip, &dummy_lp, &dummy_sp, &frame_csp,
@@ -1647,7 +1648,8 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
 migration_async:
     if (sig_flag) {
         SYNC_ALL_TO_FRAME();
-        uint8 *dummy_ip, *dummy_sp;
+        uint8 *dummy_ip;
+        uint32 *dummy_sp;
         dummy_ip = frame_ip;
         dummy_sp = frame_sp;
         int rc = wasm_dump(exec_env, module, memory, 
