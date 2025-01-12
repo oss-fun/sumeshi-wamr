@@ -1123,15 +1123,19 @@ wasmtime_ssp_fd_write(wasm_exec_env_t exec_env, struct fd_table *curfds,
     struct fd_object *fo;
     __wasi_errno_t error =
         fd_object_get(curfds, &fo, fd, __WASI_RIGHT_FD_WRITE, 0);
-    if (error != 0)
+    if (error != 0) {
+        // printf("ここか？\n");
         return error;
+    }
 
 #ifndef BH_VPRINTF
+    // printf("BH_VPFINGF\n");
     error = blocking_op_writev(exec_env, fo->file_handle, iov, (int)iovcnt,
                                nwritten);
 #else
     /* redirect stdout/stderr output to BH_VPRINTF function */
     if (fo->is_stdio) {
+        // printf("wasmtime_ssp_fd_write: fo->is_stdio\n");
         int i;
         *nwritten = 0;
         for (i = 0; i < (int)iovcnt; i++) {
@@ -1145,6 +1149,7 @@ wasmtime_ssp_fd_write(wasm_exec_env_t exec_env, struct fd_table *curfds,
         }
     }
     else {
+        // printf("wasmtime_ssp_fd_write: not fo->is_stdio\n");
         error = blocking_op_writev(exec_env, fo->file_handle, iov, (int)iovcnt,
                                    nwritten);
     }

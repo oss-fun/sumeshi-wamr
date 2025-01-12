@@ -11,6 +11,7 @@
 #include "wasm_opcode.h"
 #include "wasm_loader.h"
 #include "wasm_memory.h"
+#include "wasi_restore.h"
 #include "../common/wasm_exec_env.h"
 #include "../migration/wasm_dump.h"
 #include "../migration/wasm_restore.h"
@@ -1149,6 +1150,7 @@ wasm_interp_call_func_native(WASMModuleInstance *module_inst,
                              WASMInterpFrame *prev_frame)
 {
     WASMFunctionImport *func_import = cur_func->u.func_import;
+    // printf("func_import->field_name: %s\n", func_import->field_name);
     CApiFuncImport *c_api_func_import = NULL;
     unsigned local_cell_num =
         cur_func->param_cell_num > 2 ? cur_func->param_cell_num : 2;
@@ -1217,10 +1219,12 @@ wasm_interp_call_func_native(WASMModuleInstance *module_inst,
         }
     }
     else if (!func_import->call_conv_raw) {
+        // printf("wasm_runtime_invoke_native\n");
         ret = wasm_runtime_invoke_native(
             exec_env, native_func_pointer, func_import->func_type,
             func_import->signature, func_import->attachment, frame->lp,
             cur_func->param_cell_num, argv_ret);
+        // printf("ret: %d\n", ret);
     }
     else {
         ret = wasm_runtime_invoke_native_raw(
@@ -1401,17 +1405,17 @@ wasm_interp_call_func_import(WASMModuleInstance *module_inst,
 
 #define HANDLE_OP(opcode) HANDLE_##opcode:
 
-#define CHECK_DUMP()                                                        \
-    if (sig_flag) {                                                         \
-        goto migration_async;                                               \
+#define CHECK_DUMP()          \
+    if (sig_flag) {           \
+        goto migration_async; \
     }
 
 // #define FETCH_OPCODE_AND_DISPATCH() goto *handle_table[*frame_ip++]
-#define FETCH_OPCODE_AND_DISPATCH()                                     \
-do {                                                                    \
-    CHECK_DUMP()                                                        \
-    goto *handle_table[*frame_ip++];                                    \
-} while(0);
+#define FETCH_OPCODE_AND_DISPATCH()      \
+    do {                                 \
+        CHECK_DUMP()                     \
+        goto *handle_table[*frame_ip++]; \
+    } while (0);
 
 #if WASM_ENABLE_THREAD_MGR != 0 && WASM_ENABLE_DEBUG_INTERP != 0
 #define HANDLE_OP_END()                                                   \
@@ -1466,7 +1470,9 @@ get_global_addr(uint8 *global_data, WASMGlobalInstance *global)
 #endif
 }
 
-static void clear_refs() {
+static void
+clear_refs()
+{
     int fd;
     char *v = "4";
 
@@ -1590,7 +1596,8 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
     // リストアの初期化時間の計測(終了)
     struct timespec ts1;
     clock_gettime(CLOCK_MONOTONIC, &ts1);
-    fprintf(stderr, "boot_end, %lu\n", (uint64_t)(ts1.tv_sec*1e9) + ts1.tv_nsec);
+    fprintf(stderr, "boot_end, %lu\n",
+            (uint64_t)(ts1.tv_sec * 1e9) + ts1.tv_nsec);
 
     if (get_restore_flag()) {
         // bool done_flag;
@@ -1605,7 +1612,6 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
             perror("Error:wasm_interp_func_bytecode:frame is NULL\n");
             return;
         }
-        // debug_wasm_interp_frame(frame, module->e->functions);
 
         cur_func = frame->function;
         prev_frame = frame->prev_frame;
@@ -1620,10 +1626,11 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
 
         uint8 *dummy_ip;
         uint32 *dummy_lp, *dummy_sp;
-        rc = wasm_restore(&module, &exec_env, &cur_func, &prev_frame,
-                        &memory, &globals, &global_data, &global_addr,
-                        &frame, &dummy_ip, &dummy_lp, &dummy_sp, &frame_csp,
-                        &frame_ip_end, &else_addr, &end_addr, &maddr, &done_flag);
+        rc = wasm_restore(&module, &exec_env, &cur_func, &prev_frame, &memory,
+                          &globals, &global_data, &global_addr, &frame,
+                          &dummy_ip, &dummy_lp, &dummy_sp, &frame_csp,
+                          &frame_ip_end, &else_addr, &end_addr, &maddr,
+                          &done_flag);
         if (rc < 0) {
             // error
             perror("failed to restore\n");
@@ -1637,6 +1644,10 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
 
         frame_lp = frame->lp;
         UPDATE_ALL_FROM_FRAME();
+
+        // #if WASM_ENABLE_LIBC_WASI != 0
+        //         restore_openat_log();
+        // #endif
         FETCH_OPCODE_AND_DISPATCH();
     }
 
@@ -1652,16 +1663,16 @@ migration_async:
         uint32 *dummy_sp;
         dummy_ip = frame_ip;
         dummy_sp = frame_sp;
-        int rc = wasm_dump(exec_env, module, memory, 
-            globals, global_data, global_addr, cur_func,
-            frame, dummy_ip, dummy_sp, frame_csp,
-            frame_ip_end, else_addr, end_addr, maddr, done_flag);
+        int rc = wasm_dump(exec_env, module, memory, globals, global_data,
+                           global_addr, cur_func, frame, dummy_ip, dummy_sp,
+                           frame_csp, frame_ip_end, else_addr, end_addr, maddr,
+                           done_flag);
         if (rc < 0) {
             perror("failed to dump\n");
             exit(1);
         }
         LOG_DEBUG("dispatch_count: %d\n", dispatch_count);
-        exit(0);     
+        exit(0);
     }
     FETCH_OPCODE_AND_DISPATCH();
 #endif
@@ -1672,7 +1683,10 @@ migration_async:
                 goto got_exception;
             }
 
-            HANDLE_OP(WASM_OP_NOP) { HANDLE_OP_END(); }
+            HANDLE_OP(WASM_OP_NOP)
+            {
+                HANDLE_OP_END();
+            }
 
 #if WASM_ENABLE_EXCE_HANDLING != 0
             HANDLE_OP(WASM_OP_RETHROW)
@@ -5588,7 +5602,10 @@ migration_async:
             HANDLE_OP(WASM_OP_I32_REINTERPRET_F32)
             HANDLE_OP(WASM_OP_I64_REINTERPRET_F64)
             HANDLE_OP(WASM_OP_F32_REINTERPRET_I32)
-            HANDLE_OP(WASM_OP_F64_REINTERPRET_I64) { HANDLE_OP_END(); }
+            HANDLE_OP(WASM_OP_F64_REINTERPRET_I64)
+            {
+                HANDLE_OP_END();
+            }
 
             HANDLE_OP(WASM_OP_I32_EXTEND8_S)
             {
@@ -7334,6 +7351,7 @@ wasm_interp_call_wasm(WASMModuleInstance *module_inst, WASMExecEnv *exec_env,
     }
     else {
         if (running_mode == Mode_Interp) {
+            // 最初にここからWasmを実行
             wasm_interp_call_func_bytecode(module_inst, exec_env, function,
                                            frame);
         }

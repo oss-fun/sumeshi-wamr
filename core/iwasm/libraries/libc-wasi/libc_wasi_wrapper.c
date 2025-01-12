@@ -670,6 +670,7 @@ wasi_fd_write(wasm_exec_env_t exec_env, wasi_fd_t fd,
         ciovec->buf_len = iovec_app->buf_len;
     }
 
+    // printf("wasmtime_ssp_fd_write\n");
     err = wasmtime_ssp_fd_write(exec_env, curfds, fd, ciovec_begin, iovs_len,
                                 &nwritten);
     if (err)

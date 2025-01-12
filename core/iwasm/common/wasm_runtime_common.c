@@ -5620,8 +5620,10 @@ wasm_runtime_invoke_native(WASMExecEnv *exec_env, void *func_ptr,
 #if WASM_ENABLE_GC == 0 && WASM_ENABLE_REF_TYPES != 0
             case VALUE_TYPE_FUNCREF:
 #endif
+                // printf("invokeNative_Int32:\n");
                 argv_ret[0] =
                     (uint32)invokeNative_Int32(func_ptr, argv1, n_stacks);
+                // printf("invokeNative_Int32_arg_ret[0]: %d\n", argv_ret[0]);
                 break;
             case VALUE_TYPE_I64:
 #if WASM_ENABLE_GC != 0

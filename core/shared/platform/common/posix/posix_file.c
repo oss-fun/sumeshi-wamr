@@ -5,6 +5,7 @@
 
 #include "platform_api_extension.h"
 #include "libc_errno.h"
+#include "wasi_dump.h"
 #include <unistd.h>
 
 #if !defined(__APPLE__) && !defined(ESP_PLATFORM)
@@ -211,7 +212,6 @@ __wasi_errno_t
 os_file_get_fdflags(os_file_handle handle, __wasi_fdflags_t *flags)
 {
     int ret = fcntl(handle, F_GETFL);
-
     if (ret < 0)
         return convert_errno(errno);
 
@@ -266,7 +266,6 @@ os_file_set_fdflags(os_file_handle handle, __wasi_fdflags_t flags)
 #endif
 
     int ret = fcntl(handle, F_SETFL, fcntl_flags);
-
     if (ret < 0)
         return convert_errno(errno);
 
@@ -378,6 +377,8 @@ os_openat(os_file_handle handle, const char *path, __wasi_oflags_t oflags,
     }
 
     int fd = openat(handle, path, open_flags, 0666);
+    // printf("openat %d %s %d %s %d\n", handle, path, open_flags, "0666", fd);
+    // dump_openat_log(handle, path, open_flags, 0666, fd);
 
     if (fd < 0) {
         int openat_errno = errno;
@@ -421,7 +422,6 @@ os_file_get_access_mode(os_file_handle handle,
                         wasi_libc_file_access_mode *access_mode)
 {
     int ret = fcntl(handle, F_GETFL, 0);
-
     if (ret < 0)
         return convert_errno(errno);
 
@@ -449,7 +449,6 @@ os_close(os_file_handle handle, bool is_stdio)
         return __WASI_ESUCCESS;
 
     int ret = close(handle);
-
     if (ret < 0)
         return convert_errno(errno);
 
@@ -577,11 +576,14 @@ __wasi_errno_t
 os_writev(os_file_handle handle, const struct __wasi_ciovec_t *iov, int iovcnt,
           size_t *nwritten)
 {
+    // printf("writev: %d \n", handle);
     ssize_t len = writev(handle, (const struct iovec *)iov, (int)iovcnt);
-
-    if (len < 0)
+    // printf("write fd: %d\n", handle);
+    if (len < 0) {
+        // printf("writev error\n");
+        // printf("writev error: %d\n", errno);
         return convert_errno(errno);
-
+    }
     *nwritten = (size_t)len;
 
     return __WASI_ESUCCESS;
