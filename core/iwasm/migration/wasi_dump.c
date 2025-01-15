@@ -1,7 +1,11 @@
 #include "../libraries/libc-wasi/libc_wasi_wrapper.h"
 #include "../libraries/libc-wasi/sandboxed-system-primitives/src/posix.h"
 #include "wasm_runtime_common.h"
+#include "wasi_dump.h"
 
+#include <string.h>
+#include <fcntl.h>
+#include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -178,4 +182,23 @@ debug_fd_table(struct fd_table *ft)
             printf("fe->object is NULL\n");
         }
     }
+}
+
+void
+dump_openat_log(int handle, const char *path, int open_flags, int permissions,
+                int fd)
+{
+    FILE *file = fopen("openat_log.img", "ab");
+    if (file == NULL) {
+        return;
+    }
+    OpenatLog log;
+    strcpy(log.func_name, "openat");
+    log.handle = handle;
+    strcpy(log.path, path);
+    log.open_flags = open_flags;
+    log.permissions = permissions;
+    log.fd = fd;
+    fwrite(&log, sizeof(OpenatLog), 1, file);
+    fclose(file);
 }

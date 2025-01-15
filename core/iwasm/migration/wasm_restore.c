@@ -388,7 +388,7 @@ wasm_restore_program_counter(WASMModuleInstance *module, uint8 **frame_ip)
     fread(&offset, sizeof(uint32), 1, fp);
 
     *frame_ip = wasm_get_func_code(module->e->functions + fidx) + offset;
-
+    fclose(fp);
     return 0;
 }
 
