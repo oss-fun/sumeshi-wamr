@@ -12,6 +12,9 @@
 extern "C" {
 #endif
 
+typedef struct WASIContext *wasi_ctx_t;
+#define get_wasi_ctx(module_inst) wasm_runtime_get_wasi_ctx(module_inst)
+
 typedef __wasi_address_family_t wasi_address_family_t;
 typedef __wasi_addr_t wasi_addr_t;
 typedef __wasi_advice_t wasi_advice_t;

@@ -577,11 +577,13 @@ __wasi_errno_t
 os_writev(os_file_handle handle, const struct __wasi_ciovec_t *iov, int iovcnt,
           size_t *nwritten)
 {
+
     ssize_t len = writev(handle, (const struct iovec *)iov, (int)iovcnt);
 
-    if (len < 0)
+    if (len < 0) {
+        printf("os_writev error: %d\n", errno);
         return convert_errno(errno);
-
+    }
     *nwritten = (size_t)len;
 
     return __WASI_ESUCCESS;

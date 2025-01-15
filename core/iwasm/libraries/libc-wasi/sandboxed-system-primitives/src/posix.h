@@ -16,10 +16,34 @@
 
 #include "bh_platform.h"
 #include "locking.h"
+#include "refcount.h"
 
-struct fd_entry;
 struct fd_prestat;
 struct syscalls;
+
+struct fd_object {
+    struct refcount refcount;
+    __wasi_filetype_t type;
+    os_file_handle file_handle;
+
+    // Keep track of whether this fd object refers to a stdio stream so we know
+    // whether to close the underlying file handle when releasing the object.
+    bool is_stdio;
+    union {
+        // Data associated with directory file descriptors.
+        struct {
+            struct mutex lock;         // Lock to protect members below.
+            os_dir_stream handle;      // Directory handle.
+            __wasi_dircookie_t offset; // Offset of the directory.
+        } directory;
+    };
+};
+
+struct fd_entry {
+    struct fd_object *object;
+    __wasi_rights_t rights_base;
+    __wasi_rights_t rights_inheriting;
+};
 
 struct fd_table {
     struct rwlock lock;

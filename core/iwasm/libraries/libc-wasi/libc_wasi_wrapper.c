@@ -20,9 +20,6 @@ wasm_runtime_set_exception(wasm_module_inst_t module, const char *exception);
 #define get_module_inst(exec_env) \
     wasm_runtime_get_module_inst(exec_env)
 
-#define get_wasi_ctx(module_inst) \
-    wasm_runtime_get_wasi_ctx(module_inst)
-
 #define validate_app_addr(offset, size) \
     wasm_runtime_validate_app_addr(module_inst, offset, size)
 
@@ -51,8 +48,6 @@ typedef struct iovec_app {
     uint32 buf_offset;
     uint32 buf_len;
 } iovec_app_t;
-
-typedef struct WASIContext *wasi_ctx_t;
 
 wasi_ctx_t
 wasm_runtime_get_wasi_ctx(wasm_module_inst_t module_inst);

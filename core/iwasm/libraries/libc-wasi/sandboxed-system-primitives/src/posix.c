@@ -19,7 +19,7 @@
 #include "locking.h"
 #include "posix.h"
 #include "random.h"
-#include "refcount.h"
+
 #include "rights.h"
 #include "str.h"
 
@@ -313,30 +313,6 @@ fd_prestats_remove_entry(struct fd_prestats *pt, __wasi_fd_t fd)
     return __WASI_ESUCCESS;
 }
 
-struct fd_object {
-    struct refcount refcount;
-    __wasi_filetype_t type;
-    os_file_handle file_handle;
-
-    // Keep track of whether this fd object refers to a stdio stream so we know
-    // whether to close the underlying file handle when releasing the object.
-    bool is_stdio;
-    union {
-        // Data associated with directory file descriptors.
-        struct {
-            struct mutex lock;         // Lock to protect members below.
-            os_dir_stream handle;      // Directory handle.
-            __wasi_dircookie_t offset; // Offset of the directory.
-        } directory;
-    };
-};
-
-struct fd_entry {
-    struct fd_object *object;
-    __wasi_rights_t rights_base;
-    __wasi_rights_t rights_inheriting;
-};
-
 bool
 fd_table_init(struct fd_table *ft)
 {
@@ -356,16 +332,22 @@ fd_table_get_entry(struct fd_table *ft, __wasi_fd_t fd,
     REQUIRES_SHARED(ft->lock)
 {
     // Test for file descriptor existence.
-    if (fd >= ft->size)
+    if (fd >= ft->size) {
+        // printf("fd_table_get_entry: fd >= ft->size\n");
         return __WASI_EBADF;
+    }
     struct fd_entry *fe = &ft->entries[fd];
-    if (fe->object == NULL)
+    if (fe->object == NULL) {
+        // printf("fd_table_get_entry: fe->object == NULL\n");
         return __WASI_EBADF;
+    }
 
     // Validate rights.
     if ((~fe->rights_base & rights_base) != 0
-        || (~fe->rights_inheriting & rights_inheriting) != 0)
+        || (~fe->rights_inheriting & rights_inheriting) != 0) {
+        // printf("fd_table_get_entry: ~fe->rights_base & rights_base != 0\n");
         return __WASI_ENOTCAPABLE;
+    }
     *ret = fe;
     return 0;
 }
@@ -426,6 +408,7 @@ fd_table_attach(struct fd_table *ft, __wasi_fd_t fd, struct fd_object *fo,
                 __wasi_rights_t rights_base, __wasi_rights_t rights_inheriting)
     REQUIRES_EXCLUSIVE(ft->lock) CONSUMES(fo->refcount)
 {
+    // printf("fd_table_attach: fd=%d\n", fd);
     assert(ft->size > fd && "File descriptor table too small");
     struct fd_entry *fe = &ft->entries[fd];
     assert(fe->object == NULL
@@ -442,6 +425,7 @@ static void
 fd_table_detach(struct fd_table *ft, __wasi_fd_t fd, struct fd_object **fo)
     REQUIRES_EXCLUSIVE(ft->lock) PRODUCES((*fo)->refcount)
 {
+    // printf("fd_table_detach: fd=%d\n", fd);
     assert(ft->size > fd && "File descriptor table too small");
     struct fd_entry *fe = &ft->entries[fd];
     *fo = fe->object;
@@ -782,6 +766,7 @@ fd_object_get_locked(struct fd_object **fo, struct fd_table *ft, __wasi_fd_t fd,
 {
     // Test whether the file descriptor number is valid.
     struct fd_entry *fe;
+    // printf("fd_object_get_locked\n");
     __wasi_errno_t error =
         fd_table_get_entry(ft, fd, rights_base, rights_inheriting, &fe);
     if (error != 0)
@@ -804,6 +789,7 @@ fd_object_get(struct fd_table *curfds, struct fd_object **fo, __wasi_fd_t fd,
 {
     struct fd_table *ft = curfds;
     rwlock_rdlock(&ft->lock);
+    // printf("fd_object_get\n");
     __wasi_errno_t error =
         fd_object_get_locked(fo, ft, fd, rights_base, rights_inheriting);
     rwlock_unlock(&ft->lock);
@@ -1123,8 +1109,10 @@ wasmtime_ssp_fd_write(wasm_exec_env_t exec_env, struct fd_table *curfds,
     struct fd_object *fo;
     __wasi_errno_t error =
         fd_object_get(curfds, &fo, fd, __WASI_RIGHT_FD_WRITE, 0);
-    if (error != 0)
+    if (error != 0) {
+        // printf("fd_object_get failed\n");
         return error;
+    }
 
 #ifndef BH_VPRINTF
     error = blocking_op_writev(exec_env, fo->file_handle, iov, (int)iovcnt,

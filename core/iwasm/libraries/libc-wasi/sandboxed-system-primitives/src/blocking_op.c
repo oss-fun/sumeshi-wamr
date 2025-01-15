@@ -54,7 +54,9 @@ blocking_op_writev(wasm_exec_env_t exec_env, os_file_handle handle,
     if (!wasm_runtime_begin_blocking_op(exec_env)) {
         return __WASI_EINTR;
     }
+    // printf("handle: %d\n", handle);
     __wasi_errno_t error = os_writev(handle, iov, iovcnt, nwritten);
+
     wasm_runtime_end_blocking_op(exec_env);
     return error;
 }
