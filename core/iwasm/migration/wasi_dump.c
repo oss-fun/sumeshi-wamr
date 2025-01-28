@@ -9,6 +9,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+int fds[256];
+int offsets[256];
+int size = 0;
+
 void
 debug_fd_table(struct fd_table *ft);
 
@@ -60,6 +64,14 @@ wasi_dump(WASMExecEnv *exec_env)
         fclose(file);
         return -1;
     }
+
+    wc = fwrite(&ft->lock.object, sizeof(korp_rwlock), 1, file);
+    if (wc != 1) {
+        perror("Failed to write fd_table size");
+        fclose(file);
+        return -1;
+    }
+
     size_t index = 0;
     //  Save each fd_entry
     for (size_t i = 0; i < ft->size; i++) {
@@ -148,7 +160,7 @@ wasi_dump(WASMExecEnv *exec_env)
             break;
         }
     }
-    debug_fd_table(ft);
+    // debug_fd_table(ft);
     fclose(file);
 
     return 0;
@@ -199,6 +211,35 @@ dump_openat_log(int handle, const char *path, int open_flags, int permissions,
     log.open_flags = open_flags;
     log.permissions = permissions;
     log.fd = fd;
+    fds[size++] = fd;
     fwrite(&log, sizeof(OpenatLog), 1, file);
+    fclose(file);
+}
+
+void
+dump_file_pointer()
+{
+    FILE *file = fopen("file_pointer.img", "ab");
+    if (file == NULL) {
+        return;
+    }
+    for (int i = 0; i < size; i++) {
+        int offset = lseek(fds[i], 0, SEEK_CUR);
+        // printf("dumped fd: %d, offset: %d\n", fds[i], offset);
+        offsets[i] = offset;
+    }
+    size_t written = fwrite(fds, sizeof(int), size, file);
+    if (written != size) {
+        perror("Failed to write fds");
+        fclose(file);
+        return;
+    }
+
+    written = fwrite(offsets, sizeof(int), size, file);
+    if (written != size) {
+        perror("Failed to write offsets");
+        fclose(file);
+        return;
+    }
     fclose(file);
 }

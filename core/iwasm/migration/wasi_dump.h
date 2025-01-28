@@ -1,3 +1,5 @@
+#include "wasm_runtime_common.h"
+
 typedef struct {
     char func_name[10];
     int handle;

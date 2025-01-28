@@ -378,7 +378,7 @@ os_openat(os_file_handle handle, const char *path, __wasi_oflags_t oflags,
 
     int fd = openat(handle, path, open_flags, 0666);
     // printf("openat %d %s %d %s %d\n", handle, path, open_flags, "0666", fd);
-    // dump_openat_log(handle, path, open_flags, 0666, fd);
+    dump_openat_log(handle, path, open_flags, 0666, fd);
 
     if (fd < 0) {
         int openat_errno = errno;
@@ -579,6 +579,7 @@ os_writev(os_file_handle handle, const struct __wasi_ciovec_t *iov, int iovcnt,
     // printf("writev: %d \n", handle);
     ssize_t len = writev(handle, (const struct iovec *)iov, (int)iovcnt);
     // printf("write fd: %d\n", handle);
+
     if (len < 0) {
         // printf("writev error\n");
         // printf("writev error: %d\n", errno);

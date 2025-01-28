@@ -424,6 +424,9 @@ wasm_restore(WASMModuleInstance **module, WASMExecEnv **exec_env,
     fprintf(stderr, "program counter, %lu\n", get_time(ts1, ts2));
     // printf("Success to program counter\n");
 
+    restore_openat_log();
+    restore_file_pointer();
+
     int rc = wasi_restore(*exec_env);
     if (rc != 0) {
         return rc;

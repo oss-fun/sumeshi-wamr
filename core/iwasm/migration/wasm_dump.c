@@ -528,6 +528,8 @@ wasm_dump(WASMExecEnv *exec_env, WASMModuleInstance *module,
         return rc;
     }
 
+    dump_file_pointer();
+
     LOG_VERBOSE("Success to dump img for wamr\n");
     return 0;
 }

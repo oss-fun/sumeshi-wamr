@@ -43,6 +43,11 @@ wasi_restore(WASMExecEnv *exec_env)
         fclose(file);
         return -1;
     }
+    if (fread(&tf->lock.object, sizeof(korp_rwlock), 1, file) != 1) {
+        perror("Failed to read fd_table rwlock");
+        fclose(file);
+        return -1;
+    }
 
     // Initialize fd_table
     tf->size = size;
@@ -125,7 +130,7 @@ wasi_restore(WASMExecEnv *exec_env)
 
     fclose(file);
     wasi_ctx->curfds = tf;
-    debug_fd_table(wasi_ctx->curfds);
+    // debug_fd_table(wasi_ctx->curfds);
     return 0;
 }
 
@@ -134,7 +139,7 @@ wasi_restore(WASMExecEnv *exec_env)
 void
 restore_openat_log()
 {
-    printf("restore_openat_log\n");
+    // printf("restore_openat_log\n");
     FILE *file = fopen("openat_log.img", "rb");
     int fd;
     if (file == NULL) {
@@ -161,16 +166,16 @@ restore_openat_log()
     fclose(file);
 
     // データを確認
-    printf("Read %zu logs from the file:\n", count);
+    // printf("Read %zu logs from the file:\n", count);
     for (size_t i = 0; i < count; i++) {
-        printf("Log %zu: %s %d %s %d %d %d\n", i + 1, logs[i].func_name,
-               logs[i].handle, logs[i].path, logs[i].open_flags,
-               logs[i].permissions, logs[i].fd);
+        // printf("Log %zu: %s %d %s %d %d %d\n", i + 1, logs[i].func_name,
+        //       logs[i].handle, logs[i].path, logs[i].open_flags,
+        //       logs[i].permissions, logs[i].fd);
 
         // ファイルディスクリプタを復元
         fd = openat(logs[i].handle, logs[i].path, logs[i].open_flags,
                     logs[i].permissions);
-        printf("oldfd: %d\n", fd);
+        // printf("oldfd: %d\n", fd);
         if (fd != logs[i].fd) {
             shift_fd(logs[i].fd);
             int newfd = fcntl(fd, F_DUPFD, logs[i].fd);
@@ -178,10 +183,10 @@ restore_openat_log()
                 printf("Failed to duplicate fd: %d\n", fd);
                 continue;
             }
-            printf("newfd: %d\n", newfd);
+            // printf("newfd: %d\n", newfd);
         }
-        printf("newfd: %d\n", fd);
-        printf("getfd: %d\n", fcntl(fd, F_GETFD));
+        // printf("newfd: %d\n", fd);
+        // printf("getfd: %d\n", fcntl(fd, F_GETFD));
     }
 
     // メモリを解放
@@ -216,7 +221,76 @@ shift_fd(int fd)
         return;
     }
     int newfd = fcntl(fd, F_DUPFD, unused_fd);
+    if (newfd == -1) {
+        printf("Failed to duplicate fd: %d\n", fd);
+        return;
+    }
     // printf("newfd: %d\n", newfd);
     // printf("shift_fd: %d -> %d\n", fd, unused_fd);
     close(fd);
+}
+
+void
+restore_file_pointer()
+{
+    // printf("restore_file_pointer\n");
+    FILE *file = fopen("file_pointer.img", "rb");
+    if (file == NULL) {
+        return;
+    }
+    // 保存されているデータのサイズを推定する
+    fseek(file, 0, SEEK_END);
+    long file_size = ftell(file);
+    fseek(file, 0, SEEK_SET);
+
+    // データの個数を計算
+    int size = file_size / (2 * sizeof(int));
+    if (size <= 0) {
+        printf("No data to restore.\n");
+        fclose(file);
+        return;
+    }
+
+    // 配列を確保
+    int *fds = malloc(size * sizeof(int));
+    int *offsets = malloc(size * sizeof(int));
+    if (fds == NULL || offsets == NULL) {
+        perror("malloc");
+        fclose(file);
+        return;
+    }
+
+    // データを読み取る
+    if (fread(fds, sizeof(int), size, file) == 0) {
+        perror("Failed to read fds");
+        fclose(file);
+        return;
+    }
+    if (fread(offsets, sizeof(int), size, file) == 0) {
+        perror("Failed to read offsets");
+        fclose(file);
+        return;
+    }
+    fclose(file);
+
+    // ファイルディスクリプタとオフセットを復元
+    for (int i = 0; i < size; i++) {
+        int fd = fds[i];
+        int offset = offsets[i];
+
+        // ファイルディスクリプタを `lseek` で設定
+        if (lseek(fd, offset, SEEK_SET) == -1) {
+            perror("lseek error");
+            continue;
+        }
+
+        // printf("Restored fd: %d, offset: %d\n", fd, offset);
+
+        // 必要に応じてファイルポインタを操作
+        // fclose(fp); // ファイルポインタを閉じる場合に実行
+    }
+
+    // メモリを解放
+    free(fds);
+    free(offsets);
 }

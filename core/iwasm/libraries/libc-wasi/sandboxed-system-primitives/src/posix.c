@@ -787,9 +787,9 @@ fd_object_get(struct fd_table *curfds, struct fd_object **fo, __wasi_fd_t fd,
               __wasi_rights_t rights_base, __wasi_rights_t rights_inheriting)
     TRYLOCKS_EXCLUSIVE(0, (*fo)->refcount)
 {
+    // rintf("fd_object_get\n");
     struct fd_table *ft = curfds;
     rwlock_rdlock(&ft->lock);
-    // printf("fd_object_get\n");
     __wasi_errno_t error =
         fd_object_get_locked(fo, ft, fd, rights_base, rights_inheriting);
     rwlock_unlock(&ft->lock);
@@ -1106,11 +1106,12 @@ wasmtime_ssp_fd_write(wasm_exec_env_t exec_env, struct fd_table *curfds,
                       __wasi_fd_t fd, const __wasi_ciovec_t *iov, size_t iovcnt,
                       size_t *nwritten)
 {
+    // printf("wasmtime_ssp_fd_write\n");
     struct fd_object *fo;
     __wasi_errno_t error =
         fd_object_get(curfds, &fo, fd, __WASI_RIGHT_FD_WRITE, 0);
     if (error != 0) {
-        // printf("fd_object_get failed\n");
+        printf("fd_object_get failed\n");
         return error;
     }
 
@@ -1121,7 +1122,7 @@ wasmtime_ssp_fd_write(wasm_exec_env_t exec_env, struct fd_table *curfds,
 #else
     /* redirect stdout/stderr output to BH_VPRINTF function */
     if (fo->is_stdio) {
-        // printf("wasmtime_ssp_fd_write: fo->is_stdio\n");
+        printf("wasmtime_ssp_fd_write: fo->is_stdio\n");
         int i;
         *nwritten = 0;
         for (i = 0; i < (int)iovcnt; i++) {
@@ -1135,7 +1136,7 @@ wasmtime_ssp_fd_write(wasm_exec_env_t exec_env, struct fd_table *curfds,
         }
     }
     else {
-        // printf("wasmtime_ssp_fd_write: not fo->is_stdio\n");
+        printf("wasmtime_ssp_fd_write: not fo->is_stdio\n");
         error = blocking_op_writev(exec_env, fo->file_handle, iov, (int)iovcnt,
                                    nwritten);
     }
