@@ -9,9 +9,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-int fds[256];
-int offsets[256];
-int size = 0;
+FileLogList file_log_list;
 
 void
 debug_fd_table(struct fd_table *ft);
@@ -196,6 +194,7 @@ debug_fd_table(struct fd_table *ft)
     }
 }
 
+/*
 void
 dump_openat_log(int handle, const char *path, int open_flags, int permissions,
                 int fd)
@@ -212,7 +211,8 @@ dump_openat_log(int handle, const char *path, int open_flags, int permissions,
     log.permissions = permissions;
     log.fd = fd;
     fds[size++] = fd;
-    fwrite(&log, sizeof(OpenatLog), 1, file);
+    int wc = fwrite(&log, sizeof(OpenatLog), 1, file);
+
     fclose(file);
 }
 
@@ -241,5 +241,144 @@ dump_file_pointer()
         fclose(file);
         return;
     }
+    fclose(file);
+}
+
+void
+insert_openat_log(int handle, const char *path, int open_flags, int permissions,
+                  int fd)
+{
+    strcpy(logs[handle].func_name, "openat");
+    logs[handle].handle = handle;
+    strcpy(logs[handle].path, path);
+    logs[handle].open_flags = open_flags;
+    logs[handle].permissions = permissions;
+    logs[handle].fd = fd;
+    fds[size++] = fd;
+}
+
+void
+delete_openat_log(int handle)
+{
+    // fdsの先頭から走査して、handleと一致するものを削除
+    for (int i = 0; i < size; i++) {
+        if (fds[i] == handle) {
+            logs[i].func_name[0] = '\0';
+            logs[i].handle = 0;
+            logs[i].path[0] = '\0';
+            logs[i].open_flags = 0;
+            logs[i].permissions = 0;
+            logs[i].fd = 0;
+            size--;
+            break;
+        }
+    }
+}
+
+*/
+
+void
+init_log_list(FileLogList *list)
+{
+    list->head = NULL;
+}
+
+void
+insert_log_list(FileLogList *list, int fd, int handle, char *path,
+                int open_flags, char *permission, int offset)
+{
+    FileLogNode *new_node = (FileLogNode *)malloc(sizeof(FileLogNode));
+    if (!new_node) {
+        printf("Failed to allocate memory for new node\n");
+        perror("Failed to allocate memory for new node");
+        return;
+    }
+
+    // `filelog` のメモリ確保
+    new_node->filelog = (FileLog *)malloc(sizeof(FileLog));
+    if (!new_node->filelog) {
+        perror("メモリ確保失敗: new_node->filelog");
+        free(new_node);
+        return;
+    }
+
+    // NULL チェック
+    if (permission == NULL) {
+        printf("Error: permission is NULL\n");
+        free(new_node->filelog);
+        free(new_node);
+        return;
+    }
+
+    // ログ情報のセット
+    new_node->filelog->fd = fd;
+    new_node->filelog->handle = handle;
+    strcpy(new_node->filelog->path, path);
+    new_node->filelog->open_flags = open_flags;
+    strncpy(new_node->filelog->permission, permission,
+            sizeof(new_node->filelog->permission) - 1);
+    new_node->filelog->offset = offset;
+    // 新しいノードをリストの先頭に追加
+    new_node->next = list->head;
+    list->head = new_node;
+}
+
+void
+delete_log_list(FileLogList *list, int fd)
+{
+    FileLogNode *node = list->head;
+    FileLogNode *prev = NULL;
+
+    while (node) {
+        if (node->filelog->fd == fd) {
+            if (prev) {
+                prev->next = node->next;
+            }
+            else {
+                list->head = node->next;
+            }
+            free(node);
+            return;
+        }
+        prev = node;
+        node = node->next;
+    }
+}
+
+void
+get_file_pointer(FileLogNode *node)
+{
+    int offset = lseek(node->filelog->fd, 0, SEEK_CUR);
+    node->filelog->offset = offset;
+}
+
+void
+dump_log_list(const FileLogList *list)
+{
+    FILE *file = fopen("file.img", "w");
+    if (!file) {
+        perror("Failed to open file for writing");
+        return;
+    }
+
+    FileLogNode *node = list->head;
+    while (node) {
+        get_file_pointer(node);
+        // 数値データを先に保存
+        fwrite(&node->filelog->fd, sizeof(int), 1, file);
+        fwrite(&node->filelog->handle, sizeof(int), 1, file);
+        fwrite(&node->filelog->open_flags, sizeof(int), 1, file);
+        fwrite(&node->filelog->offset, sizeof(int), 1, file);
+
+        // 文字列データを保存 (まず文字列の長さを書き込み、次にデータを書き込む)
+        int path_len = strlen(node->filelog->path) + 1;
+        int perm_len = strlen(node->filelog->permission) + 1;
+        fwrite(&path_len, sizeof(int), 1, file);
+        fwrite(node->filelog->path, sizeof(char), 20, file);
+        fwrite(&perm_len, sizeof(int), 1, file);
+        fwrite(node->filelog->permission, sizeof(char), 20, file);
+        node = node->next;
+    }
+
     fclose(file);
 }

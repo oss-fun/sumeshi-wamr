@@ -137,45 +137,64 @@ wasi_restore(WASMExecEnv *exec_env)
 #define MAX_FD 1024 // 最大ファイルディスクリプタ数
 
 void
-restore_openat_log()
+restore_openat_log(FileLogList *list)
 {
     // printf("restore_openat_log\n");
     FILE *file = fopen("openat_log.img", "rb");
-    int fd;
     if (file == NULL) {
         return;
     }
+    printf("Success to open file for reading\n");
+    while (1) {
+        FileLog *new_log = (FileLog *)malloc(sizeof(FileLog));
+        if (!new_log) {
+            perror("メモリ確保エラー");
+            break;
+        }
+        printf("Success to allocate memory for new_log\n");
 
-    OpenatLog *logs = NULL; // 　OpenatLogの配列
-    size_t count = 0;       // ログの数
-    OpenatLog log;          // ログを読み込むための変数
+        // 数値データを読み込み
+        if (fread(&new_log->fd, sizeof(int), 1, file) != 1) {
+            free(new_log);
+            break; // データが無い場合は終了
+        }
+        fread(&new_log->handle, sizeof(int), 1, file);
+        fread(&new_log->open_flags, sizeof(int), 1, file);
+        fread(&new_log->offset, sizeof(int), 1, file);
+        printf("Success to read numeric data\n");
+        // 文字列データを読み込み
+        int path_len, perm_len;
+        fread(&path_len, sizeof(int), 1, file);
+        fread(new_log->path, sizeof(char), path_len, file);
 
-    while (fread(&log, sizeof(OpenatLog), 1, file) == 1) {
-        // 配列を1つ拡張
-        OpenatLog *new_logs = realloc(logs, (count + 1) * sizeof(OpenatLog));
-        if (new_logs == NULL) {
-            perror("Failed to reallocate memory");
-            free(logs); // 既存のメモリを解放
-            fclose(file);
-            return;
+        fread(&perm_len, sizeof(int), 1, file);
+        fread(new_log->permission, sizeof(char), perm_len, file);
+        printf("Success to read string data\n");
+        // ノードを作成してリストに追加
+        FileLogNode *new_node = (FileLogNode *)malloc(sizeof(FileLogNode));
+        if (!new_node) {
+            perror("メモリ確保エラー");
+            free(new_log->path);
+            free(new_log->permission);
+            free(new_log);
+            break;
         }
 
-        logs = new_logs;     // 新しい配列を反映
-        logs[count++] = log; // 新しい要素を追加
+        printf("Success to allocate memory for new_node\n");
+
+        new_node->filelog = new_log;
+        new_node->next = list->head;
+        list->head = new_node;
     }
+
     fclose(file);
 
+    /*
     // データを確認
-    // printf("Read %zu logs from the file:\n", count);
     for (size_t i = 0; i < count; i++) {
-        // printf("Log %zu: %s %d %s %d %d %d\n", i + 1, logs[i].func_name,
-        //       logs[i].handle, logs[i].path, logs[i].open_flags,
-        //       logs[i].permissions, logs[i].fd);
-
         // ファイルディスクリプタを復元
         fd = openat(logs[i].handle, logs[i].path, logs[i].open_flags,
                     logs[i].permissions);
-        // printf("oldfd: %d\n", fd);
         if (fd != logs[i].fd) {
             shift_fd(logs[i].fd);
             int newfd = fcntl(fd, F_DUPFD, logs[i].fd);
@@ -183,14 +202,38 @@ restore_openat_log()
                 printf("Failed to duplicate fd: %d\n", fd);
                 continue;
             }
-            // printf("newfd: %d\n", newfd);
         }
-        // printf("newfd: %d\n", fd);
-        // printf("getfd: %d\n", fcntl(fd, F_GETFD));
+    }
+    */
+
+    FileLogNode *node = list->head; // リストの先頭から開始
+
+    while (node) {
+        printf("openat");
+        int fd = openat(node->filelog->handle, node->filelog->path,
+                        node->filelog->open_flags,
+                        node->filelog->permission); // permission を考慮
+
+        if (fd != node->filelog->fd) {
+            shift_fd(node->filelog->fd);
+            int fd = fcntl(fd, F_DUPFD, node->filelog->fd);
+            if (fd == -1) {
+                printf("Failed to duplicate fd: %d\n", fd);
+                node = node->next; // 次のノードへ
+                return;
+            }
+        }
+        printf("lseek");
+        if (lseek(fd, node->filelog->offset, SEEK_SET) == -1) {
+            perror("lseek error");
+            node = node->next; // 次のノードへ
+            return;
+        }
+        node = node->next; // 次のノードへ
     }
 
-    // メモリを解放
-    free(logs);
+    free(node);
+    free(list);
 };
 
 // 使用中のFDを確認する関数
@@ -230,6 +273,7 @@ shift_fd(int fd)
     close(fd);
 }
 
+/*
 void
 restore_file_pointer()
 {
@@ -294,3 +338,4 @@ restore_file_pointer()
     free(fds);
     free(offsets);
 }
+*/

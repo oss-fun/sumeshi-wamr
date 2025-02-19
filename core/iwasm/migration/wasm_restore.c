@@ -424,10 +424,15 @@ wasm_restore(WASMModuleInstance **module, WASMExecEnv **exec_env,
     fprintf(stderr, "program counter, %lu\n", get_time(ts1, ts2));
     // printf("Success to program counter\n");
 
-    restore_openat_log();
-    restore_file_pointer();
+    clock_gettime(CLOCK_MONOTONIC, &ts1);
+    restore_openat_log(&file_log_list);
+    clock_gettime(CLOCK_MONOTONIC, &ts2);
+    fprintf(stderr, "openat_log, %lu\n", get_time(ts1, ts2));
 
+    clock_gettime(CLOCK_MONOTONIC, &ts1);
     int rc = wasi_restore(*exec_env);
+    clock_gettime(CLOCK_MONOTONIC, &ts2);
+    fprintf(stderr, "inner_wasi, %lu\n", get_time(ts1, ts2));
     if (rc != 0) {
         return rc;
     }

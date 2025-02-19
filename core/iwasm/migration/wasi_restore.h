@@ -1,18 +1,28 @@
-
-typedef struct {
-    char func_name[10];
+typedef struct FileLog {
+    int fd;
     int handle;
     char path[20];
     int open_flags;
-    int permissions;
-    int fd;
-} OpenatLog;
+    char permission[20];
+    int offset;
+} FileLog;
+
+typedef struct FileLogNode {
+    FileLog *filelog;
+    struct FileLogNode *next;
+} FileLogNode;
+
+typedef struct {
+    FileLogNode *head;
+} FileLogList;
+
+extern FileLogList file_log_list;
 
 int
 wasi_restore(WASMExecEnv *exec_env);
 
 void
-restore_openat_log();
+restore_openat_log(FileLogList *list);
 
 int
 is_fd_in_use(int fd);

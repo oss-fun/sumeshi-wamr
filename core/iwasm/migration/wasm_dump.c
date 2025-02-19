@@ -522,13 +522,19 @@ wasm_dump(WASMExecEnv *exec_env, WASMModuleInstance *module,
     }
 
     // printf("do wasi_dump\n");
+    clock_gettime(CLOCK_MONOTONIC, &ts1);
     rc = wasi_dump(exec_env);
+    clock_gettime(CLOCK_MONOTONIC, &ts2);
+    fprintf(stderr, "wasi, %u\n", get_time(ts1, ts2));
     if (rc < 0) {
         LOG_ERROR("Failed to dump wasi\n");
         return rc;
     }
 
-    dump_file_pointer();
+    clock_gettime(CLOCK_MONOTONIC, &ts1);
+    dump_log_list(&file_log_list);
+    clock_gettime(CLOCK_MONOTONIC, &ts2);
+    fprintf(stderr, "openat_log, %u\n", get_time(ts1, ts2));
 
     LOG_VERBOSE("Success to dump img for wamr\n");
     return 0;

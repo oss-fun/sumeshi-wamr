@@ -1676,6 +1676,8 @@ wasmtime_ssp_path_open(wasm_exec_env_t exec_env, struct fd_table *curfds,
         && !((fs_flags & __WASI_FDFLAG_APPEND) || (__WASI_O_TRUNC & oflags)))
         needed_inheriting |= __WASI_RIGHT_FD_SEEK;
 
+    // rintf("path_open");
+
     struct path_access pa;
     __wasi_errno_t error = path_get(
         exec_env, curfds, &pa, dirfd, dirflags, path, pathlen, needed_base,

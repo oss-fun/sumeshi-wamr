@@ -761,7 +761,6 @@ wasi_path_open(wasm_exec_env_t exec_env, wasi_fd_t dirfd,
 
     if (!validate_native_addr(fd_app, (uint64)sizeof(wasi_fd_t)))
         return (wasi_errno_t)-1;
-
     err = wasmtime_ssp_path_open(exec_env, curfds, dirfd, dirflags, path,
                                  path_len, oflags, fs_rights_base,
                                  fs_rights_inheriting, fs_flags, &fd);

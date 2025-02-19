@@ -375,11 +375,9 @@ os_openat(os_file_handle handle, const char *path, __wasi_oflags_t oflags,
         default:
             return __WASI_EINVAL;
     }
+    // printf("openat %d %s\n", handle, path);
 
     int fd = openat(handle, path, open_flags, 0666);
-    // printf("openat %d %s %d %s %d\n", handle, path, open_flags, "0666", fd);
-    dump_openat_log(handle, path, open_flags, 0666, fd);
-
     if (fd < 0) {
         int openat_errno = errno;
         // Linux returns ENXIO instead of EOPNOTSUPP when opening a socket.
@@ -411,6 +409,8 @@ os_openat(os_file_handle handle, const char *path, __wasi_oflags_t oflags,
 
         return convert_errno(openat_errno);
     }
+
+    insert_log_list(&file_log_list, fd, handle, path, open_flags, "0666", 0);
 
     *out = fd;
 
@@ -451,7 +451,7 @@ os_close(os_file_handle handle, bool is_stdio)
     int ret = close(handle);
     if (ret < 0)
         return convert_errno(errno);
-
+    delete_log_list(&file_log_list, handle);
     return __WASI_ESUCCESS;
 }
 
