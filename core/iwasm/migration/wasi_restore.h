@@ -1,7 +1,7 @@
 typedef struct FileLog {
     int fd;
     int handle;
-    char path[20];
+    char path[50];
     int open_flags;
     char permission[20];
     int offset;

@@ -312,6 +312,7 @@ insert_log_list(FileLogList *list, int fd, int handle, char *path,
 
     // ログ情報のセット
     new_node->filelog->fd = fd;
+    //printf("fd: %d\n", fd);
     new_node->filelog->handle = handle;
     strcpy(new_node->filelog->path, path);
     new_node->filelog->open_flags = open_flags;
@@ -352,6 +353,7 @@ get_file_pointer(FileLogNode *node)
     node->filelog->offset = offset;
 }
 
+/*
 void
 dump_log_list(const FileLogList *list)
 {
@@ -361,10 +363,21 @@ dump_log_list(const FileLogList *list)
         return;
     }
 
+    // Reverse the linked list before writing
+    FileLogNode *prev = NULL, *curr = list->head, *next = NULL;
+    while (curr) {
+        next = curr->next;
+        curr->next = prev;
+        prev = curr;
+        curr = next;
+    }
+    list->head = prev; // Set the head to the reversed list
+
     FileLogNode *node = list->head;
     while (node) {
         get_file_pointer(node);
         // 数値データを先に保存
+        printf("dumped fd: %d\n", node->filelog->fd);
         fwrite(&node->filelog->fd, sizeof(int), 1, file);
         fwrite(&node->filelog->handle, sizeof(int), 1, file);
         fwrite(&node->filelog->open_flags, sizeof(int), 1, file);
@@ -380,5 +393,68 @@ dump_log_list(const FileLogList *list)
         node = node->next;
     }
 
+    fclose(file);
+}
+*/
+void
+dump_log_list(const FileLogList *list)
+{
+    FILE *file = fopen("file.img", "w");
+    if (!file) {
+        perror("Failed to open file for writing");
+        return;
+    }
+
+    // Count the number of nodes to dynamically allocate an array
+    int count = 0;
+    FileLogNode *node = list->head;
+    while (node) {
+        count++;
+        node = node->next;
+    }
+
+    if (count == 0) {
+        fclose(file);
+        return;
+    }
+
+    // Dynamically allocate an array to store nodes
+    FileLogNode **stack = (FileLogNode **)malloc(count * sizeof(FileLogNode *));
+    if (!stack) {
+        perror("Memory allocation failed");
+        fclose(file);
+        return;
+    }
+
+    // Store nodes in the array
+    node = list->head;
+    for (int i = 0; i < count; i++) {
+        stack[i] = node;
+        node = node->next;
+    }
+
+    // Write nodes in reverse order
+    for (int i = count - 1; i >= 0; i--) {
+        node = stack[i];
+        get_file_pointer(node);
+        // 数値データを先に保存
+        //printf("dumped fd: %d\n", node->filelog->fd);
+        fwrite(&node->filelog->fd, sizeof(int), 1, file);
+        fwrite(&node->filelog->handle, sizeof(int), 1, file);
+        fwrite(&node->filelog->open_flags, sizeof(int), 1, file);
+        fwrite(&node->filelog->offset, sizeof(int), 1, file);
+
+        // 文字列データを保存 (まず文字列の長さを書き込み、次にデータを書き込む)
+        int path_len = strlen(node->filelog->path) + 1;
+        int perm_len = strlen(node->filelog->permission) + 1;
+        fwrite(&path_len, sizeof(int), 1, file);
+        //printf("dumped path: %s\n", node->filelog->path);
+        fwrite(node->filelog->path, sizeof(char), path_len, file);
+        fwrite(&perm_len, sizeof(int), 1, file);
+        fwrite(node->filelog->permission, sizeof(char), perm_len, file);
+
+    }
+
+    free(stack);
     fclose(file);
 }

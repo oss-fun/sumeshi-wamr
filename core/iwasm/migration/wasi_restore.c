@@ -140,80 +140,92 @@ void
 restore_openat_log(FileLogList *list)
 {
     // printf("restore_openat_log\n");
-    FILE *file = fopen("openat_log.img", "rb");
+    FILE *file = fopen("file.img", "rb");
     if (file == NULL) {
         return;
     }
-    printf("Success to open file for reading\n");
+    //printf("Success to open file for reading\n");
+
     while (1) {
-        FileLog *new_log = (FileLog *)malloc(sizeof(FileLog));
-        if (!new_log) {
-            perror("メモリ確保エラー");
+        FileLogNode *node = (FileLogNode *)malloc(sizeof(FileLogNode));
+        if (!node) {
+            perror("Memory allocation failed");
             break;
         }
-        printf("Success to allocate memory for new_log\n");
-
-        // 数値データを読み込み
-        if (fread(&new_log->fd, sizeof(int), 1, file) != 1) {
-            free(new_log);
-            break; // データが無い場合は終了
+        node->filelog = (FileLog *)malloc(sizeof(FileLog));
+        if (!node->filelog) {
+            perror("Memory allocation failed");
+            free(node);
+            break;
         }
-        fread(&new_log->handle, sizeof(int), 1, file);
-        fread(&new_log->open_flags, sizeof(int), 1, file);
-        fread(&new_log->offset, sizeof(int), 1, file);
-        printf("Success to read numeric data\n");
-        // 文字列データを読み込み
+        //printf("Success to allocate memory for new node\n");
+
+        // Read integer data
+        if (fread(&node->filelog->fd, sizeof(int), 1, file) != 1)
+            break;
+        if (fread(&node->filelog->handle, sizeof(int), 1, file) != 1)
+            break;
+        if (fread(&node->filelog->open_flags, sizeof(int), 1, file) != 1)
+            break;
+        if (fread(&node->filelog->offset, sizeof(int), 1, file) != 1)
+            break;
+
+        //printf("success to read integer data\n");
+        // Read string lengths
         int path_len, perm_len;
-        fread(&path_len, sizeof(int), 1, file);
-        fread(new_log->path, sizeof(char), path_len, file);
-
-        fread(&perm_len, sizeof(int), 1, file);
-        fread(new_log->permission, sizeof(char), perm_len, file);
-        printf("Success to read string data\n");
-        // ノードを作成してリストに追加
-        FileLogNode *new_node = (FileLogNode *)malloc(sizeof(FileLogNode));
-        if (!new_node) {
-            perror("メモリ確保エラー");
-            free(new_log->path);
-            free(new_log->permission);
-            free(new_log);
+        if (fread(&path_len, sizeof(int), 1, file) != 1)
             break;
+        
+
+        //printf("success to read string lengths\n");
+
+        //printf("success to validate string lengths\n");
+
+        // Read strings
+        if (fread(node->filelog->path, sizeof(char), path_len, file) != path_len) {
+            printf("Failed to read path\n");
         }
 
-        printf("Success to allocate memory for new_node\n");
+        if (fread(&perm_len, sizeof(int), 1, file) != 1)
+            break;
+        if (fread(node->filelog->permission, sizeof(char), perm_len, file) != perm_len) {
+            printf("Failed to read permission\n");
+        }
+        //printf("success to read strings\n");
 
-        new_node->filelog = new_log;
-        new_node->next = list->head;
-        list->head = new_node;
+        // Add node to list
+        node->next = NULL;
+        if (!list->head) {
+            list->head = node;
+        }
+        else {
+            FileLogNode *temp = list->head;
+            while (temp->next) {
+                temp = temp->next;
+            }
+            temp->next = node;
+        }
     }
 
     fclose(file);
 
-    /*
-    // データを確認
-    for (size_t i = 0; i < count; i++) {
-        // ファイルディスクリプタを復元
-        fd = openat(logs[i].handle, logs[i].path, logs[i].open_flags,
-                    logs[i].permissions);
-        if (fd != logs[i].fd) {
-            shift_fd(logs[i].fd);
-            int newfd = fcntl(fd, F_DUPFD, logs[i].fd);
-            if (newfd == -1) {
-                printf("Failed to duplicate fd: %d\n", fd);
-                continue;
-            }
-        }
-    }
-    */
-
     FileLogNode *node = list->head; // リストの先頭から開始
 
     while (node) {
-        printf("openat");
+        //printf("openat\n");
+        //printf("path: %s\n", node->filelog->path);
         int fd = openat(node->filelog->handle, node->filelog->path,
                         node->filelog->open_flags,
                         node->filelog->permission); // permission を考慮
-
+        if (fd == -1) {
+            perror("Failed to open file");
+            printf("Error code: %d, Error message: %s\n", errno,
+                   strerror(errno));
+            node = node->next; // 次のノードへ
+            return;
+        }
+        //printf("fd: %d\n", fd);
+        //printf("node->filelog->fd: %d\n", node->filelog->fd);
         if (fd != node->filelog->fd) {
             shift_fd(node->filelog->fd);
             int fd = fcntl(fd, F_DUPFD, node->filelog->fd);
@@ -223,7 +235,7 @@ restore_openat_log(FileLogList *list)
                 return;
             }
         }
-        printf("lseek");
+        //printf("lseek\n");
         if (lseek(fd, node->filelog->offset, SEEK_SET) == -1) {
             perror("lseek error");
             node = node->next; // 次のノードへ
@@ -232,8 +244,8 @@ restore_openat_log(FileLogList *list)
         node = node->next; // 次のノードへ
     }
 
-    free(node);
-    free(list);
+    //free(node);
+    //free(list);
 };
 
 // 使用中のFDを確認する関数
@@ -249,7 +261,7 @@ find_unused_fd()
 {
     for (int fd = 0; fd < MAX_FD; fd++) {
         if (!is_fd_in_use(fd)) {
-            // printf("find_unused_fd: %d\n", fd);
+            printf("find_unused_fd: %d\n", fd);
             return fd;
         }
     }
@@ -268,8 +280,8 @@ shift_fd(int fd)
         printf("Failed to duplicate fd: %d\n", fd);
         return;
     }
-    // printf("newfd: %d\n", newfd);
-    // printf("shift_fd: %d -> %d\n", fd, unused_fd);
+    //printf("newfd: %d\n", newfd);
+    //printf("shift_fd: %d -> %d\n", fd, unused_fd);
     close(fd);
 }
 
